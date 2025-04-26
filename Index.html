@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Web NFC Reader</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
+  <div class="bg-white shadow-lg rounded-2xl p-8 w-full max-w-xl space-y-6">
+    <h2 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+      📲 Web NFC Reader
+    </h2>
+    
+    <button id="scanButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-xl transition-all">
+      Start NFC Scan
+    </button>
+
+    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-auto h-64">
+      <pre id="output" class="text-sm text-gray-700 whitespace-pre-wrap">Waiting for scan...</pre>
+    </div>
+  </div>
+
+  <script>
+    const AES_KEY = "1234567890123456";
+    const output = document.getElementById('output');
+
+    const decryptAES = (base64Data) => {
+      try {
+        const key = CryptoJS.enc.Utf8.parse(AES_KEY);
+        const decrypted = CryptoJS.AES.decrypt(
+          { ciphertext: CryptoJS.enc.Base64.parse(base64Data) },
+          key,
+          { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
+        );
+        return decrypted.toString(CryptoJS.enc.Utf8);
+      } catch (e) {
+        return "❌ Decryption failed: " + e.message;
+      }
+    };
+
+    document.getElementById('scanButton').addEventListener('click', async () => {
+      if (!("NDEFReader" in window)) {
+        output.textContent = "❌ Web NFC not supported on this device.";
+        return;
+      }
+
+      const reader = new NDEFReader();
+      const writer = new NDEFWriter();
+
+      try {
+        await reader.scan();
+        output.textContent = "📡 Scan started. Tap the NFC tag...\n";
+
+        reader.onreading = async (event) => {
+          const message = event.message;
+
+          for (const record of message.records) {
+            const textDecoder = new TextDecoder(record.encoding || 'utf-8');
+            const rawBase64 = textDecoder.decode(record.data);
+            const decrypted = decryptAES(rawBase64);
+
+            output.textContent += `\n\n🔒 Raw Base64:\n${rawBase64}`;
+            output.textContent += `\n\n🔓 Decrypted:\n${decrypted}`;
+
+            // Send response back
+            try {
+              await writer.write({
+                records: [
+                  {
+                    recordType: "text",
+                    data: "Scan complete ✅"
+                  }
+                ]
+              });
+              output.textContent += `\n\n📨 Response sent: "Scan complete ✅"`;
+            } catch (writeError) {
+              output.textContent += `\n⚠️ Failed to send response: ${writeError}`;
+            }
+          }
+        };
+
+      } catch (err) {
+        output.textContent = "❌ Error: " + err;
+      }
+    });
+  </script>
+</body>
+</html>
